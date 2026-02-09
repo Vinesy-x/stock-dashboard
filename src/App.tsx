@@ -21,7 +21,7 @@ ChartJS.register(
 )
 
 const API_URL = 'https://stock-api-beryl.vercel.app'
-const VERSION = 'v1.0.0'
+const VERSION = 'v1.0.1'
 
 interface Stock {
   code: string; name: string; price: number; change_pct: number
