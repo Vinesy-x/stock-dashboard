@@ -21,6 +21,7 @@ ChartJS.register(
 )
 
 const API_URL = 'https://stock-api-beryl.vercel.app'
+const VERSION = 'v1.0.0'
 
 interface Stock {
   code: string; name: string; price: number; change_pct: number
@@ -112,8 +113,8 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="header-title"><h1>📊 量化看板</h1><span className="update-time">{data.update_time?.split(' ')[1] || ''}</span></div>
-        <button className="refresh-btn" onClick={fetchData}>🔄</button>
+        <div className="header-title"><h1>📊 量化看板</h1><span className="version">{VERSION}</span></div>
+        <div className="header-right"><span className="update-time">{data.update_time?.split(' ')[1] || ''}</span><button className="refresh-btn" onClick={fetchData}>🔄</button></div>
       </header>
 
       <main className="main">
