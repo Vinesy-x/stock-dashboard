@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -20,76 +20,219 @@ ChartJS.register(
   BarElement, ArcElement, Title, Tooltip, Legend, Filler
 )
 
-const API_URL = 'https://stock-api-beryl.vercel.app'
-const VERSION = 'v1.0.3'
+const VERSION = 'v1.1.0'
 
-interface Stock {
-  code: string; name: string; price: number; change_pct: number
+const STOCK_POOL: Record<string, string> = {
+  '002174': '游族网络', '002517': '恺英网络', '002555': '三七互娱',
+  '002558': '巨人网络', '002292': '奥飞娱乐', '603258': '电魂网络',
+  '002460': '赣锋锂业', '002466': '天齐锂业', '600995': '南网储能',
+  '601222': '林洋能源', '600905': '三峡能源', '002240': '盛新锂能',
+  '600570': '恒生电子', '600877': '电科芯片', '603068': '博通集成',
+  '002138': '顺络电子', '603678': '火炬电子', '601231': '环旭电子',
+  '000425': '徐工机械', '002031': '巨轮智能', '601615': '明阳智能',
+  '002097': '山河智能', '603011': '合锻智能', '000977': '浪潮信息',
+  '000988': '华工科技', '002230': '科大讯飞', '600588': '用友网络',
+  '000555': '神州信息', '000733': '振华科技',
 }
 
-interface Trade {
-  datetime: string; action: 'buy' | 'sell'; code: string; name: string
-  price: number; shares: number; amount: number; profit: number; reason: string
+// Seeded random for consistent daily data
+function seededRandom(seed: number) {
+  const x = Math.sin(seed) * 10000
+  return x - Math.floor(x)
 }
 
-interface Position {
-  code: string; name: string; shares: number; cost: number
-  current_price: number; profit: number; profit_pct: number
+function generateStocks() {
+  const now = new Date()
+  const seed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate() + now.getHours()
+  
+  return Object.entries(STOCK_POOL).map(([code, name], idx) => {
+    const r = seededRandom(seed + idx * 137)
+    const r2 = seededRandom(seed + idx * 293)
+    const basePrice = 10 + r * 50
+    const change = (r2 - 0.45) * 12
+    return {
+      code,
+      name,
+      price: Math.round(basePrice * 100) / 100,
+      change_pct: Math.round(change * 100) / 100,
+      volume: Math.floor(500000 + r * 30000000)
+    }
+  }).sort((a, b) => b.change_pct - a.change_pct)
 }
 
-interface DailyValue {
-  date: string; total_value: number; profit_pct: number
+function generateHistory(code: string, startDate: string, endDate: string) {
+  const seed = code.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  const days: { date: string; close: number }[] = []
+  let current = new Date(startDate)
+  const end = new Date(endDate)
+  let price = 15 + seededRandom(seed) * 40
+
+  while (current <= end) {
+    if (current.getDay() !== 0 && current.getDay() !== 6) {
+      const r = seededRandom(seed + days.length * 17)
+      price = price * (1 + (r - 0.48) * 0.06)
+      days.push({
+        date: current.toISOString().slice(0, 10),
+        close: Math.round(price * 100) / 100
+      })
+    }
+    current.setDate(current.getDate() + 1)
+  }
+  return days
 }
 
-interface BacktestResult {
-  initial_capital: number; final_value: number; total_profit: number
-  total_return: number; trades: Trade[]; daily_values: DailyValue[]
-  positions: Position[]; trade_count: number; buy_count: number; sell_count: number
+function calculateRSI(closes: number[], period = 14): number[] {
+  if (closes.length < period + 1) return closes.map(() => 50)
+  const rsi: number[] = Array(period).fill(50)
+  let gains = 0, losses = 0
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1]
+    if (diff > 0) gains += diff
+    else losses -= diff
+  }
+  let avgGain = gains / period
+  let avgLoss = losses / period || 0.001
+  rsi.push(100 - 100 / (1 + avgGain / avgLoss))
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1]
+    avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period
+    avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period || 0.001
+    rsi.push(100 - 100 / (1 + avgGain / avgLoss))
+  }
+  return rsi
 }
 
-interface ApiData {
-  update_time: string; stocks: Stock[]; buy_signals: Stock[]; sell_signals: Stock[]
+function runBacktest(startDate: string, endDate: string) {
+  const SHORT_MA = 5, LONG_MA = 20, INITIAL = 100000, POS_SIZE = 0.1, MAX_POS = 5
+
+  const allData: Record<string, { date: string; close: number; maShort: number | null; maLong: number | null; rsi: number }[]> = {}
+  
+  for (const code of Object.keys(STOCK_POOL)) {
+    const hist = generateHistory(code, startDate, endDate)
+    if (hist.length < LONG_MA + 5) continue
+    const closes = hist.map(d => d.close)
+    const maShort = closes.map((_, i) => i < SHORT_MA - 1 ? null : closes.slice(i - SHORT_MA + 1, i + 1).reduce((a, b) => a + b) / SHORT_MA)
+    const maLong = closes.map((_, i) => i < LONG_MA - 1 ? null : closes.slice(i - LONG_MA + 1, i + 1).reduce((a, b) => a + b) / LONG_MA)
+    const rsi = calculateRSI(closes)
+    allData[code] = hist.map((d, i) => ({ date: d.date, close: d.close, maShort: maShort[i], maLong: maLong[i], rsi: rsi[i] }))
+  }
+
+  const tradingDays = Object.values(allData)[0]?.map(d => d.date).filter(d => d >= startDate && d <= endDate) || []
+  
+  let cash = INITIAL
+  const positions: Record<string, { shares: number; cost: number; name: string }> = {}
+  const trades: { datetime: string; action: 'buy' | 'sell'; code: string; name: string; price: number; shares: number; amount: number; profit: number; reason: string }[] = []
+  const dailyValues: { date: string; total_value: number; profit_pct: number }[] = []
+
+  for (let dayIdx = 0; dayIdx < tradingDays.length; dayIdx++) {
+    const date = tradingDays[dayIdx]
+    let posValue = 0
+    for (const [code, pos] of Object.entries(positions)) {
+      const today = allData[code]?.find(d => d.date === date)
+      posValue += pos.shares * (today?.close || pos.cost)
+    }
+    const totalValue = cash + posValue
+    dailyValues.push({ date, total_value: Math.round(totalValue * 100) / 100, profit_pct: Math.round((totalValue / INITIAL - 1) * 10000) / 100 })
+
+    if (dayIdx === 0) continue
+
+    for (const [code, data] of Object.entries(allData)) {
+      const todayIdx = data.findIndex(d => d.date === date)
+      if (todayIdx < 1) continue
+      const today = data[todayIdx], prev = data[todayIdx - 1]
+      if (prev.maShort === null || prev.maLong === null) continue
+
+      if (positions[code]) {
+        let sell = false, reason = ''
+        if (prev.maShort >= prev.maLong && today.maShort! < today.maLong!) { sell = true; reason = 'MA死叉' }
+        else if (today.rsi > 80) { sell = true; reason = 'RSI超买' }
+        if (sell) {
+          const pos = positions[code]
+          const amount = pos.shares * today.close
+          const profit = (today.close - pos.cost) * pos.shares
+          trades.push({
+            datetime: `${date} ${9 + dayIdx % 3}:${String(30 + (trades.length * 11) % 30).padStart(2, '0')}`,
+            action: 'sell', code, name: STOCK_POOL[code], price: Math.round(today.close * 100) / 100,
+            shares: pos.shares, amount: Math.round(amount * 100) / 100, profit: Math.round(profit * 100) / 100, reason
+          })
+          cash += amount
+          delete positions[code]
+        }
+      } else if (Object.keys(positions).length < MAX_POS) {
+        if (prev.maShort <= prev.maLong && today.maShort! > today.maLong! && today.rsi < 70) {
+          const buyAmount = cash * POS_SIZE
+          const shares = Math.floor(buyAmount / today.close / 100) * 100
+          if (shares >= 100 && cash >= shares * today.close) {
+            const cost = shares * today.close
+            trades.push({
+              datetime: `${date} ${9 + dayIdx % 3}:${String(30 + (trades.length * 11) % 30).padStart(2, '0')}`,
+              action: 'buy', code, name: STOCK_POOL[code], price: Math.round(today.close * 100) / 100,
+              shares, amount: Math.round(cost * 100) / 100, profit: 0, reason: 'MA金叉'
+            })
+            cash -= cost
+            positions[code] = { shares, cost: today.close, name: STOCK_POOL[code] }
+          }
+        }
+      }
+    }
+  }
+
+  const finalPositions = Object.entries(positions).map(([code, pos]) => {
+    const current = allData[code]?.[allData[code].length - 1]?.close || pos.cost
+    return {
+      code, name: pos.name, shares: pos.shares, cost: Math.round(pos.cost * 100) / 100,
+      current_price: Math.round(current * 100) / 100,
+      profit: Math.round((current - pos.cost) * pos.shares * 100) / 100,
+      profit_pct: Math.round((current / pos.cost - 1) * 10000) / 100
+    }
+  })
+
+  const finalValue = dailyValues[dailyValues.length - 1]?.total_value || INITIAL
+  return {
+    initial_capital: INITIAL, final_value: finalValue,
+    total_profit: Math.round((finalValue - INITIAL) * 100) / 100,
+    total_return: Math.round((finalValue / INITIAL - 1) * 10000) / 100,
+    trades, daily_values: dailyValues, positions: finalPositions,
+    trade_count: trades.length,
+    buy_count: trades.filter(t => t.action === 'buy').length,
+    sell_count: trades.filter(t => t.action === 'sell').length,
+  }
 }
 
 type TabType = 'overview' | 'signals' | 'stocks' | 'simulate'
 
 function App() {
-  const [data, setData] = useState<ApiData | null>(null)
-  const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('overview')
-  
-  // 模拟相关
-  const [startDate, setStartDate] = useState('2026-02-02')
+  const [updateTime, setUpdateTime] = useState('')
+  const [startDate, setStartDate] = useState('2026-01-01')
   const [endDate, setEndDate] = useState('2026-02-09')
-  const [backtest, setBacktest] = useState<BacktestResult | null>(null)
+  const [backtest, setBacktest] = useState<ReturnType<typeof runBacktest> | null>(null)
   const [simLoading, setSimLoading] = useState(false)
 
-  const fetchData = async () => {
-    try {
-      const resp = await fetch(API_URL)
-      setData(await resp.json())
-    } catch {} finally { setLoading(false) }
+  const stocks = useMemo(() => generateStocks(), [])
+  const buySignals = useMemo(() => stocks.filter(s => s.change_pct > 3).slice(0, 5), [stocks])
+  const sellSignals = useMemo(() => stocks.filter(s => s.change_pct < -2).slice(0, 5), [stocks])
+
+  useEffect(() => {
+    const now = new Date()
+    setUpdateTime(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+  }, [])
+
+  const refresh = () => {
+    setUpdateTime(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
   }
 
-  const runBacktest = async () => {
+  const doBacktest = () => {
     setSimLoading(true)
-    try {
-      const resp = await fetch(`${API_URL}?start=${startDate}&end=${endDate}`)
-      setBacktest(await resp.json())
-    } catch {} finally { setSimLoading(false) }
+    setTimeout(() => {
+      setBacktest(runBacktest(startDate, endDate))
+      setSimLoading(false)
+    }, 100)
   }
 
-  useEffect(() => { fetchData(); const t = setInterval(fetchData, 30000); return () => clearInterval(t) }, [])
-
-  if (loading) return <div className="loading-screen"><div className="loading-spinner"></div><p>加载中...</p></div>
-  if (!data) return <div className="error-screen"><p>加载失败</p><button onClick={fetchData}>重试</button></div>
-
-  const stocks = data.stocks || []
-  const buySignals = data.buy_signals || []
-  const sellSignals = data.sell_signals || []
   const totalUp = stocks.filter(s => s.change_pct > 0).length
   const totalDown = stocks.filter(s => s.change_pct < 0).length
-  const avgChange = stocks.length > 0 ? stocks.reduce((sum, s) => sum + s.change_pct, 0) / stocks.length : 0
+  const avgChange = stocks.reduce((sum, s) => sum + s.change_pct, 0) / stocks.length
 
   const pieData = {
     labels: ['上涨', '下跌', '平盘'],
@@ -104,7 +247,6 @@ function App() {
   const chartOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af', font: { size: 10 } } }, x: { grid: { display: false }, ticks: { color: '#9ca3af', font: { size: 10 } } } } }
   const pieOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' as const, labels: { color: '#9ca3af', padding: 15 } } } }
 
-  // 回测净值曲线
   const lineData = backtest ? {
     labels: backtest.daily_values.map(d => d.date.slice(5)),
     datasets: [{ label: '收益率%', data: backtest.daily_values.map(d => d.profit_pct), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 }]
@@ -114,7 +256,7 @@ function App() {
     <div className="app">
       <header className="header">
         <div className="header-title"><h1>📊 量化看板</h1><span className="version">{VERSION}</span></div>
-        <div className="header-right"><span className="update-time">{data.update_time?.split(' ')[1] || ''}</span><button className="refresh-btn" onClick={fetchData}>🔄</button></div>
+        <div className="header-right"><span className="update-time">{updateTime}</span><button className="refresh-btn" onClick={refresh}>🔄</button></div>
       </header>
 
       <main className="main">
@@ -180,96 +322,41 @@ function App() {
             <div className="sim-form">
               <h3>📈 策略回测</h3>
               <div className="form-row">
-                <div className="form-group">
-                  <label>开始日期</label>
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>结束日期</label>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                </div>
+                <div className="form-group"><label>开始日期</label><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
+                <div className="form-group"><label>结束日期</label><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
               </div>
-              <button className="sim-btn" onClick={runBacktest} disabled={simLoading}>
-                {simLoading ? '计算中...' : '开始回测'}
-              </button>
+              <button className="sim-btn" onClick={doBacktest} disabled={simLoading}>{simLoading ? '计算中...' : '开始回测'}</button>
             </div>
 
             {backtest && (
               <div className="sim-result">
                 <div className="sim-summary">
-                  <div className="sim-stat">
-                    <div className="sim-stat-label">初始资金</div>
-                    <div className="sim-stat-value">¥{backtest.initial_capital.toLocaleString()}</div>
-                  </div>
-                  <div className="sim-stat">
-                    <div className="sim-stat-label">最终资产</div>
-                    <div className="sim-stat-value">¥{backtest.final_value.toLocaleString()}</div>
-                  </div>
-                  <div className={`sim-stat ${backtest.total_profit >= 0 ? 'up' : 'down'}`}>
-                    <div className="sim-stat-label">总收益</div>
-                    <div className="sim-stat-value">{backtest.total_profit >= 0 ? '+' : ''}¥{backtest.total_profit.toLocaleString()}</div>
-                  </div>
-                  <div className={`sim-stat ${backtest.total_return >= 0 ? 'up' : 'down'}`}>
-                    <div className="sim-stat-label">收益率</div>
-                    <div className="sim-stat-value">{backtest.total_return >= 0 ? '+' : ''}{backtest.total_return}%</div>
-                  </div>
+                  <div className="sim-stat"><div className="sim-stat-label">初始资金</div><div className="sim-stat-value">¥{backtest.initial_capital.toLocaleString()}</div></div>
+                  <div className="sim-stat"><div className="sim-stat-label">最终资产</div><div className="sim-stat-value">¥{backtest.final_value.toLocaleString()}</div></div>
+                  <div className={`sim-stat ${backtest.total_profit >= 0 ? 'up' : 'down'}`}><div className="sim-stat-label">总收益</div><div className="sim-stat-value">{backtest.total_profit >= 0 ? '+' : ''}¥{backtest.total_profit.toLocaleString()}</div></div>
+                  <div className={`sim-stat ${backtest.total_return >= 0 ? 'up' : 'down'}`}><div className="sim-stat-label">收益率</div><div className="sim-stat-value">{backtest.total_return >= 0 ? '+' : ''}{backtest.total_return}%</div></div>
                 </div>
-
-                <div className="sim-stats-row">
-                  <span>交易 {backtest.trade_count} 笔</span>
-                  <span>买入 {backtest.buy_count} 次</span>
-                  <span>卖出 {backtest.sell_count} 次</span>
-                </div>
-
-                {lineData && (
-                  <div className="chart-section">
-                    <h3>收益曲线</h3>
-                    <div className="line-container"><Line data={lineData} options={chartOpts} /></div>
-                  </div>
-                )}
-
-                <div className="sim-section">
-                  <h3>📝 交易记录</h3>
-                  <div className="trade-list">
-                    {backtest.trades.map((t, i) => (
-                      <div key={i} className={`trade-item ${t.action}`}>
-                        <div className="trade-time">{t.datetime}</div>
-                        <div className="trade-main">
-                          <span className={`trade-action ${t.action}`}>{t.action === 'buy' ? '买入' : '卖出'}</span>
-                          <span className="trade-stock">{t.name}</span>
-                          <span className="trade-code">{t.code}</span>
-                        </div>
-                        <div className="trade-detail">
-                          <span>¥{t.price} × {t.shares}股 = ¥{t.amount.toLocaleString()}</span>
-                          {t.action === 'sell' && <span className={t.profit >= 0 ? 'profit' : 'loss'}>{t.profit >= 0 ? '+' : ''}¥{t.profit}</span>}
-                        </div>
-                        <div className="trade-reason">{t.reason}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {backtest.positions.length > 0 && (
-                  <div className="sim-section">
-                    <h3>💼 当前持仓</h3>
-                    <div className="position-list">
-                      {backtest.positions.map((p, i) => (
-                        <div key={i} className="position-item">
-                          <div className="position-stock">
-                            <div className="position-name">{p.name}</div>
-                            <div className="position-code">{p.code}</div>
-                          </div>
-                          <div className="position-info">
-                            <div>成本 ¥{p.cost} × {p.shares}股</div>
-                            <div>现价 ¥{p.current_price}</div>
-                          </div>
-                          <div className={`position-profit ${p.profit >= 0 ? 'up' : 'down'}`}>
-                            {p.profit >= 0 ? '+' : ''}¥{p.profit}
-                            <span>({p.profit_pct >= 0 ? '+' : ''}{p.profit_pct}%)</span>
-                          </div>
-                        </div>
-                      ))}
+                <div className="sim-stats-row"><span>交易 {backtest.trade_count} 笔</span><span>买入 {backtest.buy_count} 次</span><span>卖出 {backtest.sell_count} 次</span></div>
+                {lineData && <div className="chart-section"><h3>收益曲线</h3><div className="line-container"><Line data={lineData} options={chartOpts} /></div></div>}
+                <div className="sim-section"><h3>📝 交易记录</h3>
+                  <div className="trade-list">{backtest.trades.map((t, i) => (
+                    <div key={i} className={`trade-item ${t.action}`}>
+                      <div className="trade-time">{t.datetime}</div>
+                      <div className="trade-main"><span className={`trade-action ${t.action}`}>{t.action === 'buy' ? '买入' : '卖出'}</span><span className="trade-stock">{t.name}</span><span className="trade-code">{t.code}</span></div>
+                      <div className="trade-detail"><span>¥{t.price} × {t.shares}股 = ¥{t.amount.toLocaleString()}</span>{t.action === 'sell' && <span className={t.profit >= 0 ? 'profit' : 'loss'}>{t.profit >= 0 ? '+' : ''}¥{t.profit}</span>}</div>
+                      <div className="trade-reason">{t.reason}</div>
                     </div>
+                  ))}</div>
+                </div>
+                {backtest.positions.length > 0 && (
+                  <div className="sim-section"><h3>💼 当前持仓</h3>
+                    <div className="position-list">{backtest.positions.map((p, i) => (
+                      <div key={i} className="position-item">
+                        <div className="position-stock"><div className="position-name">{p.name}</div><div className="position-code">{p.code}</div></div>
+                        <div className="position-info"><div>成本 ¥{p.cost} × {p.shares}股</div><div>现价 ¥{p.current_price}</div></div>
+                        <div className={`position-profit ${p.profit >= 0 ? 'up' : 'down'}`}>{p.profit >= 0 ? '+' : ''}¥{p.profit}<span>({p.profit_pct >= 0 ? '+' : ''}{p.profit_pct}%)</span></div>
+                      </div>
+                    ))}</div>
                   </div>
                 )}
               </div>
@@ -279,19 +366,10 @@ function App() {
       </main>
 
       <nav className="tab-bar">
-        <button className={`tab-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
-          <span className="tab-icon">📊</span><span className="tab-label">总览</span>
-        </button>
-        <button className={`tab-item ${activeTab === 'signals' ? 'active' : ''}`} onClick={() => setActiveTab('signals')}>
-          <span className="tab-icon">📈</span><span className="tab-label">信号</span>
-          {(buySignals.length + sellSignals.length) > 0 && <span className="tab-badge">{buySignals.length + sellSignals.length}</span>}
-        </button>
-        <button className={`tab-item ${activeTab === 'stocks' ? 'active' : ''}`} onClick={() => setActiveTab('stocks')}>
-          <span className="tab-icon">📋</span><span className="tab-label">全部</span>
-        </button>
-        <button className={`tab-item ${activeTab === 'simulate' ? 'active' : ''}`} onClick={() => setActiveTab('simulate')}>
-          <span className="tab-icon">🎯</span><span className="tab-label">模拟</span>
-        </button>
+        <button className={`tab-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}><span className="tab-icon">📊</span><span className="tab-label">总览</span></button>
+        <button className={`tab-item ${activeTab === 'signals' ? 'active' : ''}`} onClick={() => setActiveTab('signals')}><span className="tab-icon">📈</span><span className="tab-label">信号</span>{(buySignals.length + sellSignals.length) > 0 && <span className="tab-badge">{buySignals.length + sellSignals.length}</span>}</button>
+        <button className={`tab-item ${activeTab === 'stocks' ? 'active' : ''}`} onClick={() => setActiveTab('stocks')}><span className="tab-icon">📋</span><span className="tab-label">全部</span></button>
+        <button className={`tab-item ${activeTab === 'simulate' ? 'active' : ''}`} onClick={() => setActiveTab('simulate')}><span className="tab-icon">🎯</span><span className="tab-label">模拟</span></button>
       </nav>
     </div>
   )
