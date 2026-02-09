@@ -250,6 +250,105 @@ body {
   margin-bottom: 24px;
 }
 
+/* Stock List */
+.stock-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.stock-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.stock-row:last-child {
+  border-bottom: none;
+}
+
+.stock-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stock-name .code {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.stock-name .name {
+  font-weight: 500;
+}
+
+.stock-price {
+  font-weight: 600;
+}
+
+.stock-change {
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  min-width: 70px;
+  text-align: center;
+}
+
+.stock-change.up {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.stock-change.down {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* Loading & Error */
+.loading, .error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-size: 18px;
+  color: #9ca3af;
+}
+
+/* Refresh Button */
+.refresh-btn {
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border: none;
+  color: white;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+.refresh-btn:hover {
+  opacity: 0.9;
+}
+
+/* Signals Grid */
+.signals {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .signals {
+    grid-template-columns: 1fr;
+  }
+  
+  .charts {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Footer */
 .footer {
   text-align: center;
