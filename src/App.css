@@ -454,6 +454,241 @@ body {
   cursor: pointer;
 }
 
+/* Simulate Tab */
+.sim-form {
+  background: var(--bg-card);
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.sim-form h3 {
+  margin-bottom: 16px;
+  font-size: 16px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.form-group {
+  flex: 1;
+}
+
+.form-group label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.sim-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--blue), #8b5cf6);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sim-btn:disabled {
+  opacity: 0.6;
+}
+
+.sim-result {
+  animation: fadeIn 0.3s ease;
+}
+
+.sim-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sim-stat {
+  background: var(--bg-card);
+  padding: 16px;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.sim-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.sim-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.sim-stat.up .sim-stat-value { color: var(--green); }
+.sim-stat.down .sim-stat-value { color: var(--red); }
+
+.sim-stats-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.sim-section {
+  margin-bottom: 16px;
+}
+
+.sim-section h3 {
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+
+.line-container {
+  height: 200px;
+}
+
+/* Trade List */
+.trade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trade-item {
+  background: var(--bg-card);
+  padding: 14px;
+  border-radius: 10px;
+  border-left: 3px solid;
+}
+
+.trade-item.buy { border-left-color: var(--green); }
+.trade-item.sell { border-left-color: var(--red); }
+
+.trade-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-family: monospace;
+}
+
+.trade-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.trade-action {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.trade-action.buy { background: rgba(34,197,94,0.2); color: var(--green); }
+.trade-action.sell { background: rgba(239,68,68,0.2); color: var(--red); }
+
+.trade-stock {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.trade-code {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.trade-detail {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.trade-detail .profit { color: var(--green); font-weight: 600; }
+.trade-detail .loss { color: var(--red); font-weight: 600; }
+
+.trade-reason {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.05);
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* Position List */
+.position-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.position-item {
+  background: var(--bg-card);
+  padding: 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.position-stock {
+  flex: 1;
+}
+
+.position-name {
+  font-weight: 600;
+}
+
+.position-code {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.position-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.position-profit {
+  text-align: right;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.position-profit.up { color: var(--green); }
+.position-profit.down { color: var(--red); }
+
+.position-profit span {
+  display: block;
+  font-size: 11px;
+  font-weight: normal;
+}
+
 /* Desktop */
 @media (min-width: 481px) {
   .app {
